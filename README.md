@@ -6,6 +6,7 @@ A lightweight LibGDX library for parsing and rendering PopCap/EA Plants vs. Zomb
 - **Asynchronous Loading:** Non-blocking background PAM binary parsing and texture atlas loading.
 - **Stateless Architecture:** A single `PamPlayer` instance can draw unique entities concurrently without allocating per-instance state.
 - **Visibility Maps:** Toggle individual character parts, armor states (buckets, helmets), and status effects (butter, frozen).
+- **Part Queries:** Locate any named part on any frame, to drive game logic from the animation itself.
 
 ## Requirements
 - **Java:** 8+
@@ -73,9 +74,25 @@ visibilityMap.put("_zombie_egypt_armor2_states", true);
 visibilityMap.put("zombie_armor_bucket_norm", true); // Show bucket armor
 // Render with visibility map
 player.draw(batch, walkClip, stateTime, x, y, true, visibilityMap);
+// ...or with scale as well
+player.draw(batch, walkClip, stateTime, x, y, 0.6f, 0.6f, true, visibilityMap);
 ```
 
-### 4. Direct Region & Texture Retrieval
+### 4. Part Queries
+`partBounds` reports where a named part (and its descendants) sits on a given frame, so gameplay can follow the art instead of guessing at it — advancing a walking character by its planted foot, hanging a projectile off a muzzle, or hit-testing a head:
+```java
+// Where is the foot right now? Canvas units, origin at the canvas centre, Y-down —
+// the same space as bounds(). Scale it and add the draw position for world coordinates.
+Rectangle foot = player.partBounds(walkClip, stateTime, "zombie_egypt_foot_inner_heel");
+float footWorldX = x + (foot.x + foot.width / 2f) * scale;
+```
+Sampling a curve is cheaper in one pass, which is worth doing at load time rather than per frame:
+```java
+Rectangle[] perFrame = player.partBoundsByFrame(walkClip, "zombie_egypt_foot_inner_heel");
+```
+Entries are `null` where the part draws nothing on that frame. Both queries cover the same subtree `drawPart` renders.
+
+### 5. Direct Region & Texture Retrieval
 You can easily retrieve individual texture regions or full atlases directly from the `TextureBank`:
 ```java
 // Fetch a specific sub-region by image resource ID
