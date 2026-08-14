@@ -141,6 +141,14 @@ public final class PamPlayer {
         if (ba != null) drawInternal(batch, ba, ba.range(clip), time, loop, x, y,
                 1f, 1f, partsVisibility, null);
     }
+    public void draw(Batch batch, String pam, String clip, float time, float x, float y,
+                     float scaleX, float scaleY,
+                     boolean loop,
+                     Map<String, Boolean> partsVisibility) {
+        BakedAnimation ba = bakedAsync(pam);
+        if (ba != null) drawInternal(batch, ba, ba.range(clip), time, loop, x, y,
+                scaleX, scaleY, partsVisibility, null);
+    }
     public void drawPart(Batch batch, String pam, String clip, float time, float x, float y, String part) {
         BakedAnimation ba = bakedAsync(pam);
         if (ba != null) drawInternal(batch, ba, ba.range(clip), time, true, x, y, 1f, 1f, null,
