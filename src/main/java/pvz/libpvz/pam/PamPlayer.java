@@ -207,12 +207,14 @@ public final class PamPlayer {
         }
     }
 
-    public void draw(Batch batch, ClipRef clip, float time, float x, float y,
-                     float scaleX, float scaleY, boolean loop,
-                     Map<String, Boolean> partsVisibility) {
+    /**
+     * Renders a PAM animation clip with both scale fields and custom visibility.
+     */
+    public void draw(Batch batch, ClipRef clip, float time, float x, float y, float scaleX,
+                     float scaleY, boolean loop, Map<String, Boolean> partsVisibility) {
         if (clip != null) {
-            drawInternal(batch, clip.ba, clip.range, time, loop, x, y, scaleX, scaleY, partsVisibility,
-                    null);
+            drawInternal(batch, clip.ba, clip.range, time, loop, x, y, scaleX, scaleY,
+                    partsVisibility, null);
         }
     }
 
@@ -267,6 +269,54 @@ public final class PamPlayer {
     public AnimationPart getParts(String pam) {
         BakedAnimation ba = bakedSync(pam);
         return ba != null ? recursivePartBuild(ba.rootPart) : null;
+    }
+
+    // part queries
+
+    /**
+     * Locates a single part within a frame, covering {@code part} and its descendants — the same
+     * set {@link #drawPart} renders.
+     *
+     * <p>The rectangle is in the same space as {@link #bounds(String, String)}: canvas units with
+     * the origin at the canvas centre and Y pointing down. To place it on screen, multiply by the
+     * scale you draw with and add the draw position, mirroring the {@code draw} arguments.
+     *
+     * @param time playback time in seconds; wraps around the clip like a looping draw.
+     * @return the bounds, or null if the animation is not loaded yet or the part draws nothing on
+     *         that frame.
+     */
+    public Rectangle partBounds(ClipRef clip, float time, String part) {
+        if (clip == null || clip.ba == null || clip.ba.frames.length == 0) {
+            return null;
+        }
+        int span = Math.max(1, clip.range[1] - clip.range[0] + 1);
+        int fi = (int) Math.floor(time * clip.ba.frameRate);
+        if (fi < 0) {
+            fi = 0;
+        }
+        return partBoundsOfFrame(clip.ba, clip.range[0] + ((fi % span) + span) % span, part);
+    }
+
+    /** {@link #partBounds(ClipRef, float, String)} by name; loads the animation synchronously. */
+    public Rectangle partBounds(String pam, String clip, float time, String part) {
+        BakedAnimation ba = bakedSync(pam);
+        return ba == null ? null : partBounds(getClip(pam, clip), time, part);
+    }
+
+    /**
+     * Locates a part on every frame of a clip in one pass, for baking a curve once at load rather
+     * than sampling frame by frame. Entries are null where the part draws nothing.
+     */
+    public Rectangle[] partBoundsByFrame(ClipRef clip, String part) {
+        if (clip == null || clip.ba == null) {
+            return new Rectangle[0];
+        }
+        int span = Math.max(1, clip.range[1] - clip.range[0] + 1);
+        Rectangle[] out = new Rectangle[span];
+        for (int i = 0; i < span; i++) {
+            out[i] = partBoundsOfFrame(clip.ba, clip.range[0] + i, part);
+        }
+        return out;
     }
 
     
@@ -447,6 +497,45 @@ public final class PamPlayer {
             batch.draw(part.texture, v, 0, 20);
         }
     }
+    /** Bounds of one part on one baked frame, in canvas space with the origin at the centre. */
+    private Rectangle partBoundsOfFrame(BakedAnimation ba, int frameIndex, String part) {
+        if (ba == null || part == null || frameIndex < 0 || frameIndex >= ba.frames.length) {
+            return null;
+        }
+        BakedAnimation.BakedFrame frame = ba.frames[frameIndex];
+        float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+        for (int i = 0; i < frame.count; i++) {
+            // Quads belong to the part if it is the part itself or sits under it, which is the
+            // same subtree drawPart whitelists.
+            boolean underPart = false;
+            for (Part p = ba.parts[frame.partIds[i]]; p != null; p = p.parent) {
+                if (part.equals(p.name)) {
+                    underPart = true;
+                    break;
+                }
+            }
+            if (!underPart) {
+                continue;
+            }
+            int c8 = i * 8;
+            for (int c = 0; c < 8; c += 2) {
+                float cx = frame.corners[c8 + c];
+                float cy = frame.corners[c8 + c + 1];
+                if (cx < minX) minX = cx;
+                if (cy < minY) minY = cy;
+                if (cx > maxX) maxX = cx;
+                if (cy > maxY) maxY = cy;
+            }
+        }
+        if (minX > maxX || minY > maxY) {
+            return null;
+        }
+        float halfW = ba.canvasWidth > 0f ? ba.canvasWidth / 2f : 0.5f;
+        float halfH = ba.canvasHeight > 0f ? ba.canvasHeight / 2f : 0.5f;
+        return new Rectangle(minX - halfW, minY - halfH, maxX - minX, maxY - minY);
+    }
+
     private float multiply(float packed, Color batchColor) {
         int bits = NumberUtils.floatToIntColor(packed);
         float a = ((bits >>> 24) & 0xff) / 255f;
